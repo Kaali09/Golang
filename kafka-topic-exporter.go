@@ -15,7 +15,7 @@ import (
 
 const (
 	zookeeperConn = "11.2.1.15:2181"
-	cgroup        = "metrics.read"
+	cgroup        = "metrics.te"
 	topic1        = "sunbirddev.analytics_metrics"
 	topic2        = "sunbirddev.pipeline_metrics"
 )
@@ -44,17 +44,17 @@ func main() {
 	defer cg.Close()
 	// run consumer
 	go consume(cg)
-	log.Fatal(http.ListenAndServe(":8000", nil))
+	log.Fatal(http.ListenAndServe(":8001", nil))
 }
 func serve(w http.ResponseWriter, r *http.Request) {
 	for _, value := range prometheusMetrics {
+		// fmt.Println(value.metrics)
 		for k, j := range value.metrics {
-			// tmp, _ := k.(string)
-			//	fmt.Println("#### PrmometheusMetrics ####")
-			//	fmt.Println(prometheusMetrics)
 			fmt.Fprintf(w, "samza_metrics_%v{job_name=\"%v\",partition=\"%v\"} %v\n", strings.ReplaceAll(k, "-", "_"), value.job_name, value.partition, j)
+			fmt.Printf("samza_metrics_%v{job_name=\"%v\",partition=\"%v\"} %v\n", strings.ReplaceAll(k, "-", "_"), value.job_name, value.partition, j)
 		}
 	}
+	prometheusMetrics = nil
 }
 func initConsumer() (*consumergroup.ConsumerGroup, error) {
 	// consumer config

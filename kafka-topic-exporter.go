@@ -3,25 +3,26 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/Shopify/sarama"
-	"github.com/wvanbergen/kafka/consumergroup"
 	"log"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/Shopify/sarama"
+	"github.com/wvanbergen/kafka/consumergroup"
 )
 
 const (
 	zookeeperConn = "11.2.1.15:2181"
-	cgroup        = "metrics.read"
+	cgroup        = "Test1"
 	topic1        = "sunbirddev.analytics_metrics"
 	topic2        = "sunbirddev.pipeline_metrics"
 )
 
 type metrics struct {
 	job_name  string
-	partition int
+	partition float64
 	metrics   map[string]interface{}
 }
 
@@ -31,6 +32,7 @@ var msg []string
 func main() {
 	// setup sarama log to stdout
 	sarama.Logger = log.New(os.Stdout, "", log.Ltime)
+	fmt.Println(sarama.Logger)
 	// prometheus.MustRegister(gauge)
 	http.HandleFunc("/metrics", serve)
 	// init consumer
@@ -48,6 +50,8 @@ func serve(w http.ResponseWriter, r *http.Request) {
 	for _, value := range prometheusMetrics {
 		for k, j := range value.metrics {
 			// tmp, _ := k.(string)
+			//	fmt.Println("#### PrmometheusMetrics ####")
+			//	fmt.Println(prometheusMetrics)
 			fmt.Fprintf(w, "samza_metrics_%v{job_name=\"%v\",partition=\"%v\"} %v\n", strings.ReplaceAll(k, "-", "_"), value.job_name, value.partition, j)
 		}
 	}
@@ -64,6 +68,24 @@ func initConsumer() (*consumergroup.ConsumerGroup, error) {
 	}
 	return cg, err
 }
+
+// Metrics value should be of value type float64
+// else drop the value
+func metricsValidator(m map[string]interface{}) map[string]interface{} {
+	for key, val := range m {
+		switch val, ok := val.(float64); ok {
+		// converting interface to float64
+		case true:
+			m[key] = val
+		// Dropping not float64 values
+		default:
+			fmt.Println("Dropping not float64 value %v=%v", key, val)
+			delete(m, key)
+		}
+	}
+	return m
+}
+
 func convertor(jsons []byte) {
 	var m map[string]interface{}
 	err := json.Unmarshal(jsons, &m)
@@ -71,11 +93,11 @@ func convertor(jsons []byte) {
 		panic(err)
 	}
 	job_name, _ := m["job-name"].(string)
-	partition, _ := m["partition"].(int)
+	partition, _ := m["partition"].(float64)
 	delete(m, "metricts")
 	delete(m, "job-name")
 	delete(m, "partition")
-	prometheusMetrics = append(prometheusMetrics, metrics{job_name, partition, m})
+	prometheusMetrics = append(prometheusMetrics, metrics{job_name, partition, metricsValidator(m)})
 }
 
 /*

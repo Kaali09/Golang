@@ -41,7 +41,6 @@ func main() {
 	}
 	defer cg.Close()
 	// run consumer
-	fmt.Println(consume)
 	go consume(cg)
 	log.Fatal(http.ListenAndServe(":8000", nil))
 }

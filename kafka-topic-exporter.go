@@ -15,7 +15,7 @@ import (
 
 const (
 	zookeeperConn = "11.2.1.15:2181"
-	cgroup        = "Test1"
+	cgroup        = "metrics.read"
 	topic1        = "sunbirddev.analytics_metrics"
 	topic2        = "sunbirddev.pipeline_metrics"
 )
@@ -73,13 +73,13 @@ func initConsumer() (*consumergroup.ConsumerGroup, error) {
 // else drop the value
 func metricsValidator(m map[string]interface{}) map[string]interface{} {
 	for key, val := range m {
-		switch val, ok := val.(float64); ok {
+		switch v, ok := val.(float64); ok {
 		// converting interface to float64
 		case true:
-			m[key] = val
+			m[key] = v
 		// Dropping not float64 values
 		default:
-			fmt.Println("Dropping not float64 value %v=%v", key, val)
+			fmt.Println("Dropping not float64 value", key, val)
 			delete(m, key)
 		}
 	}
@@ -109,7 +109,6 @@ func consume(cg *consumergroup.ConsumerGroup) {
 		select {
 		case message := <-cg.Messages():
 			convertor(message.Value)
-			// msg = append(msg, string(message.Value))
 			err := cg.CommitUpto(message)
 			if err != nil {
 				fmt.Println("Error commit zookeeper: ", err.Error())

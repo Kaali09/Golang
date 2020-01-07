@@ -13,11 +13,10 @@ import (
 	"github.com/wvanbergen/kafka/consumergroup"
 )
 
-const (
-	zookeeperConn = "11.2.1.15:2181"
-	cgroup        = "metrics.te"
-	topic1        = "sunbirddev.analytics_metrics"
-	topic2        = "sunbirddev.pipeline_metrics"
+var (
+	cgroup        string
+	topics        []string
+	zookeeperConn string
 )
 
 type metrics struct {
@@ -30,6 +29,19 @@ var prometheusMetrics []metrics
 var msg []string
 
 func main() {
+
+	// Creating variables from cli
+	var tmp_topics string
+	flag.StringVar(&cgroup, "cgroup", "metrics.read", "Consumer group for samza metrics")
+	flag.StringVar(&tmp_topics, "topics", "topic1,topic2", "Topic names to read")
+	flag.StringVar(&zookeeperConn, "zookeeper", "11.2.1.15", "Ip addredd of the zookeeper. By default port will be 2181")
+	flag.Parse()
+	fmt.Println(tmp_topics)
+	topics = strings.Split(tmp_topics, ",")
+	fmt.Println("topics:", topics)
+	fmt.Println("consumergroup:", cgroup)
+	fmt.Println("zookeeperIPs:", zookeeperConn)
+
 	// setup sarama log to stdout
 	sarama.Logger = log.New(os.Stdout, "", log.Ltime)
 	fmt.Println(sarama.Logger)
@@ -44,7 +56,7 @@ func main() {
 	defer cg.Close()
 	// run consumer
 	go consume(cg)
-	log.Fatal(http.ListenAndServe(":8001", nil))
+	log.Fatal(http.ListenAndServe(":8000", nil))
 }
 func serve(w http.ResponseWriter, r *http.Request) {
 	for _, value := range prometheusMetrics {
@@ -62,7 +74,7 @@ func initConsumer() (*consumergroup.ConsumerGroup, error) {
 	config.Offsets.Initial = sarama.OffsetOldest
 	config.Offsets.ProcessingTimeout = 10 * time.Second
 	// join to consumer group
-	cg, err := consumergroup.JoinConsumerGroup(cgroup, []string{topic1, topic2}, []string{zookeeperConn}, config)
+	cg, err := consumergroup.JoinConsumerGroup(cgroup, topics, []string{zookeeperConn}, config)
 	if err != nil {
 		return nil, err
 	}

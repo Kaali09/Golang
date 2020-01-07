@@ -1,96 +1,126 @@
 package main
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Shopify/sarama"
-	// "github.com/prometheus/client_golang/prometheus" "github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/wvanbergen/kafka/consumergroup"
 )
 
-const (
-	zookeeperConn = "11.2.1.15:2181"
-	cgroup        = "Test1"
-	topic1        = "sunbirddev.analytics_metrics"
-	topic2        = "sunbirddev.pipeline_metrics"
+var (
+	cgroup        string
+	topics        []string
+	zookeeperConn string
 )
 
-var msg string
+type metrics struct {
+	job_name  string
+	partition float64
+	metrics   map[string]interface{}
+}
 
-// var (
-//     gauge = prometheus.NewGauge(
-//         prometheus.GaugeOpts{
-//             Namespace: "golang",
-//             Name:      "my_gauge",
-//             Help:      "This is my gauge",
-//         })
-// )
+var prometheusMetrics []metrics
+var msg []string
 
 func main() {
-	// setup sarama log to stdout
-	sarama.Logger = log.New(os.Stdout, "", log.Ltime)
-	// prometheus.MustRegister(gauge)
-	http.HandleFunc("/", helloWorld)
+	// Creating variables from cli
+	var tmp_topics string
+	flag.StringVar(&cgroup, "cgroup", "metrics.read", "Consumer group for samza metrics")
+	flag.StringVar(&tmp_topics, "topics", "topic1,topic2", "Topic names to read")
+	flag.StringVar(&zookeeperConn, "zookeeper", "11.2.1.15", "Ip addredd of the zookeeper. By default port will be 2181")
+	flag.Parse()
+	fmt.Println(tmp_topics)
+	topics = strings.Split(tmp_topics, ",")
+	fmt.Println("topics:", topics)
+	fmt.Println("consumergroup:", cgroup)
+	fmt.Println("zookeeperIPs:", zookeeperConn)
 
+	sarama.Logger = log.New(os.Stdout, "", log.Ltime)
+	fmt.Println(sarama.Logger)
+	// prometheus.MustRegister(gauge)
+	http.HandleFunc("/metrics", serve)
 	// init consumer
 	cg, err := initConsumer()
 	if err != nil {
 		fmt.Println("Error consumer goup: ", err.Error())
 		os.Exit(1)
 	}
-	fmt.Println("####### Printing cg #########")
-	fmt.Println(cg)
 	defer cg.Close()
 	// run consumer
-	fmt.Println("##### Printing consume #######")
-	fmt.Println(consume)
-	fmt.Println("#### end of consume ####")
 	go consume(cg)
-	log.Fatal(http.ListenAndServe(":8080", nil))
-
+	log.Fatal(http.ListenAndServe(":8000", nil))
 }
-
-func helloWorld(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "\"HTTPVersion\": %q\n", msg)
+func serve(w http.ResponseWriter, r *http.Request) {
+	for _, value := range prometheusMetrics {
+		for k, j := range value.metrics {
+			// tmp, _ := k.(string)
+			//	fmt.Println("#### PrmometheusMetrics ####")
+			//	fmt.Println(prometheusMetrics)
+			fmt.Fprintf(w, "samza_metrics_%v{job_name=\"%v\",partition=\"%v\"} %v\n", strings.ReplaceAll(k, "-", "_"), value.job_name, value.partition, j)
+		}
+	}
 }
-
 func initConsumer() (*consumergroup.ConsumerGroup, error) {
 	// consumer config
 	config := consumergroup.NewConfig()
-	/*
-		printing config var
-		fmt.Println("Printing config var")
-		fmt.Println(config)
-		fmt.Println("printing sarama offsetoldest")
-		fmt.Println(sarama.OffsetOldest)
-	*/
 	config.Offsets.Initial = sarama.OffsetOldest
-	/*
-		fmt.Println("printing config.Offsers.initial")
-		fmt.Println(config.Offsets.Initial)
-	*/
 	config.Offsets.ProcessingTimeout = 10 * time.Second
-
 	// join to consumer group
-	cg, err := consumergroup.JoinConsumerGroup(cgroup, []string{topic1, topic2}, []string{zookeeperConn}, config)
+	cg, err := consumergroup.JoinConsumerGroup(cgroup, topics, []string{zookeeperConn}, config)
+	//	cg, err := consumergroup.JoinConsumerGroup(cgroup, []string{topic1, topic2}, []string{zookeeperConn}, config)
 	if err != nil {
 		return nil, err
 	}
-
 	return cg, err
 }
 
+// Metrics value should be of value type float64
+// else drop the value
+func metricsValidator(m map[string]interface{}) map[string]interface{} {
+	for key, val := range m {
+		switch v, ok := val.(float64); ok {
+		// converting interface to float64
+		case true:
+			m[key] = v
+		// Dropping not float64 values
+		default:
+			fmt.Println("Dropping not float64 value", key, val)
+			delete(m, key)
+		}
+	}
+	return m
+}
+
+func convertor(jsons []byte) {
+	var m map[string]interface{}
+	err := json.Unmarshal(jsons, &m)
+	if err != nil {
+		panic(err)
+	}
+	job_name, _ := m["job-name"].(string)
+	partition, _ := m["partition"].(float64)
+	delete(m, "metricts")
+	delete(m, "job-name")
+	delete(m, "partition")
+	prometheusMetrics = append(prometheusMetrics, metrics{job_name, partition, metricsValidator(m)})
+}
+
+/*
+metrics reference
+samza_metrics_asset_enrichment {"partition": 1, "consumer-lag" : 2, "failed_message_count": 2}
+*/
 func consume(cg *consumergroup.ConsumerGroup) {
 	for {
 		select {
 		case message := <-cg.Messages():
-			msg = string(message.Value)
-			//	msg := <-fmt.Sprintf("Value: ", (message.Value))
-			fmt.Println("got message")
+			convertor(message.Value)
 			err := cg.CommitUpto(message)
 			if err != nil {
 				fmt.Println("Error commit zookeeper: ", err.Error())

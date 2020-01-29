@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-kali
+spec:
+  replicas: 1
+  selector: 
+    matchLabels:
+      app: hello
+  template:
+    metadata:
+      name: hello
+      labels: 
+        app: hello
+    spec:
+      containers: 
+      - name: hello-kali
+        image: sunbirdbootcamp/golang:latest
+        ports:
+        - containerPort: 8070

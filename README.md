@@ -1,2 +1,2 @@
 # Golang
-Golang project
+Github webhook listener.

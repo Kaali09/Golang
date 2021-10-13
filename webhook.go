@@ -1,5 +1,3 @@
-// ref: https://groob.io/tutorial/go-github-webhook/
-
 package main
 
 import (
@@ -30,7 +28,14 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 			fmt.Printf("New repository has been created %s\n",
 				 *e.Repo.FullName)
 
+		} else if e.Action != nil && *e.Action == "deleted" {
+			fmt.Printf("The repository has been deleted %s\n",
+			        *e.Repo.FullName)
+	        } else if e.Action != nil && *e.Action == "edited" && (e.Repo.Topics[0] == "golang-learning-test" || e.Repo.Topics[1] == "golang-learning-test")  {
+			  fmt.Printf("The topic has been created %s\n",
+		                e.Repo.Topics[0])
 		}
+
 	default:
 		log.Printf("unknown event type %s\n", github.WebHookType(r))
 		return
